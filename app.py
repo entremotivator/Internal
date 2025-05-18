@@ -165,11 +165,8 @@ with st.sidebar:
                 st.session_state.credentials = credentials
                 st.session_state.user_info = {'email': email, 'name': 'Service Account'}
                 
-                st.success("Authentication successful!")
+                st.success("Authentication successful! Please refresh the page to continue.")
                 os.unlink(temp_creds_path)  # Clean up the temporary file
-                
-                # Force a rerun to update the UI
-                st.experimental_rerun()
                 
             except Exception as e:
                 st.error(f"Authentication failed: {str(e)}")
@@ -195,8 +192,7 @@ with st.sidebar:
                     st.session_state.authenticated = True
                     st.session_state.user_info = {'email': email, 'name': email.split('@')[0]}
                     
-                    # Force a rerun to update the UI
-                    st.experimental_rerun()
+                    st.success("Authentication successful! Please refresh the page to continue.")
             else:
                 st.error("Please enter both email and password")
     
@@ -210,8 +206,7 @@ with st.sidebar:
             st.session_state.current_worksheet = None
             st.session_state.sheets_data = None
             
-            # Force a rerun to update the UI
-            st.experimental_rerun()
+            st.success("You have been signed out. Please refresh the page.")
     
     st.markdown("---")
     
@@ -327,6 +322,114 @@ def spreadsheet_selector():
             st.error(f"Error accessing Google Sheets: {str(e)}")
     
     return False
+
+def render_chart(chart_config, df):
+    """Render a chart based on configuration"""
+    st.markdown(f"<h3 class='section-header'>{chart_config['title']}</h3>", unsafe_allow_html=True)
+    
+    if chart_config["type"] == "Bar Chart":
+        # Group by the x column and aggregate the y column
+        grouped = df.groupby(chart_config["x_col"])[chart_config["y_col"]].sum().reset_index()
+        grouped = grouped.sort_values(chart_config["y_col"], ascending=False)
+        
+        # Limit to top 15 categories if there are too many
+        if len(grouped) > 15:
+            grouped = grouped.head(15)
+        
+        fig = px.bar(
+            grouped,
+            x=chart_config["x_col"],
+            y=chart_config["y_col"],
+            title=chart_config["title"],
+            text_auto='.2s'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    elif chart_config["type"] == "Line Chart":
+        # Sort by the x column
+        plot_df = df.sort_values(by=chart_config["x_col"])
+        
+        fig = go.Figure()
+        
+        for y_col in chart_config["y_cols"]:
+            fig.add_trace(
+                go.Scatter(
+                    x=plot_df[chart_config["x_col"]],
+                    y=plot_df[y_col],
+                    mode='lines+markers',
+                    name=y_col
+                )
+            )
+        
+        fig.update_layout(
+            title=chart_config["title"],
+            xaxis_title=chart_config["x_col"],
+            yaxis_title="Value",
+            legend_title="Variables"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    elif chart_config["type"] == "Pie Chart":
+        # Group by the labels column and aggregate the values column
+        grouped = df.groupby(chart_config["labels_col"])[chart_config["values_col"]].sum().reset_index()
+        
+        # Limit to top 10 categories if there are too many
+        if len(grouped) > 10:
+            # Keep top 9 and group the rest as "Other"
+            top_9 = grouped.nlargest(9, chart_config["values_col"])
+            other_sum = grouped.nsmallest(len(grouped) - 9, chart_config["values_col"])[chart_config["values_col"]].sum()
+            
+            other_row = pd.DataFrame({
+                chart_config["labels_col"]: ["Other"],
+                chart_config["values_col"]: [other_sum]
+            })
+            
+            grouped = pd.concat([top_9, other_row])
+        
+        fig = px.pie(
+            grouped,
+            names=chart_config["labels_col"],
+            values=chart_config["values_col"],
+            title=chart_config["title"]
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    elif chart_config["type"] == "Scatter Plot":
+        fig = px.scatter(
+            df,
+            x=chart_config["x_col"],
+            y=chart_config["y_col"],
+            color=chart_config["color_col"],
+            title=chart_config["title"],
+            trendline="ols" if not chart_config["color_col"] else None
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    elif chart_config["type"] == "Heatmap":
+        # Create a pivot table
+        pivot = df.pivot_table(
+            index=chart_config["y_col"],
+            columns=chart_config["x_col"],
+            values=chart_config["z_col"],
+            aggfunc="mean"
+        )
+        
+        fig = px.imshow(
+            pivot,
+            title=chart_config["title"],
+            labels=dict(
+                x=chart_config["x_col"],
+                y=chart_config["y_col"],
+                color=chart_config["z_col"]
+            ),
+            color_continuous_scale="Viridis"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 
 # Main content area
 if not st.session_state.authenticated:
@@ -1397,6 +1500,9 @@ elif page == "Google Sheets - Dashboard":
                         else:
                             color_col = "None"
                     
+                    charts.append({ 
+                            color_col = "None"
+                    
                     charts.append({
                         "type": chart_type,
                         "title": chart_title,
@@ -1504,114 +1610,6 @@ elif page == "Google Sheets - Dashboard":
                 # Add timestamp
                 st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.8em;'>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>", unsafe_allow_html=True)
 
-def render_chart(chart_config, df):
-    """Render a chart based on configuration"""
-    st.markdown(f"<h3 class='section-header'>{chart_config['title']}</h3>", unsafe_allow_html=True)
-    
-    if chart_config["type"] == "Bar Chart":
-        # Group by the x column and aggregate the y column
-        grouped = df.groupby(chart_config["x_col"])[chart_config["y_col"]].sum().reset_index()
-        grouped = grouped.sort_values(chart_config["y_col"], ascending=False)
-        
-        # Limit to top 15 categories if there are too many
-        if len(grouped) > 15:
-            grouped = grouped.head(15)
-        
-        fig = px.bar(
-            grouped,
-            x=chart_config["x_col"],
-            y=chart_config["y_col"],
-            title=chart_config["title"],
-            text_auto='.2s'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    elif chart_config["type"] == "Line Chart":
-        # Sort by the x column
-        plot_df = df.sort_values(by=chart_config["x_col"])
-        
-        fig = go.Figure()
-        
-        for y_col in chart_config["y_cols"]:
-            fig.add_trace(
-                go.Scatter(
-                    x=plot_df[chart_config["x_col"]],
-                    y=plot_df[y_col],
-                    mode='lines+markers',
-                    name=y_col
-                )
-            )
-        
-        fig.update_layout(
-            title=chart_config["title"],
-            xaxis_title=chart_config["x_col"],
-            yaxis_title="Value",
-            legend_title="Variables"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    elif chart_config["type"] == "Pie Chart":
-        # Group by the labels column and aggregate the values column
-        grouped = df.groupby(chart_config["labels_col"])[chart_config["values_col"]].sum().reset_index()
-        
-        # Limit to top 10 categories if there are too many
-        if len(grouped) > 10:
-            # Keep top 9 and group the rest as "Other"
-            top_9 = grouped.nlargest(9, chart_config["values_col"])
-            other_sum = grouped.nsmallest(len(grouped) - 9, chart_config["values_col"])[chart_config["values_col"]].sum()
-            
-            other_row = pd.DataFrame({
-                chart_config["labels_col"]: ["Other"],
-                chart_config["values_col"]: [other_sum]
-            })
-            
-            grouped = pd.concat([top_9, other_row])
-        
-        fig = px.pie(
-            grouped,
-            names=chart_config["labels_col"],
-            values=chart_config["values_col"],
-            title=chart_config["title"]
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    elif chart_config["type"] == "Scatter Plot":
-        fig = px.scatter(
-            df,
-            x=chart_config["x_col"],
-            y=chart_config["y_col"],
-            color=chart_config["color_col"],
-            title=chart_config["title"],
-            trendline="ols" if not chart_config["color_col"] else None
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    elif chart_config["type"] == "Heatmap":
-        # Create a pivot table
-        pivot = df.pivot_table(
-            index=chart_config["y_col"],
-            columns=chart_config["x_col"],
-            values=chart_config["z_col"],
-            aggfunc="mean"
-        )
-        
-        fig = px.imshow(
-            pivot,
-            title=chart_config["title"],
-            labels=dict(
-                x=chart_config["x_col"],
-                y=chart_config["y_col"],
-                color=chart_config["z_col"]
-            ),
-            color_continuous_scale="Viridis"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-
 elif page == "Google Sheets - Data Editor":
     st.markdown("<h1 class='main-header'>Google Sheets Data Editor</h1>", unsafe_allow_html=True)
     
@@ -1686,7 +1684,7 @@ elif page == "Google Sheets - Data Editor":
             if st.button("Add Row"):
                 try:
                     # Add the new row to the dataframe
-                    new_df = df.append(new_row, ignore_index=True)
+                    new_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     
                     # Connect to Google Sheets
                     gc = gspread.authorize(st.session_state.credentials)
@@ -1702,10 +1700,7 @@ elif page == "Google Sheets - Data Editor":
                     # Update the session state
                     st.session_state.sheets_data = new_df
                     
-                    st.success("Row added successfully!")
-                    
-                    # Force a rerun to update the UI
-                    st.experimental_rerun()
+                    st.success("Row added successfully! Please refresh the page to see the updated data.")
                 except Exception as e:
                     st.error(f"Error adding row: {str(e)}")
         
@@ -1752,10 +1747,7 @@ elif page == "Google Sheets - Data Editor":
                         # Update the session state
                         st.session_state.sheets_data = new_df
                         
-                        st.success(f"Deleted {len(valid_indices)} rows successfully!")
-                        
-                        # Force a rerun to update the UI
-                        st.experimental_rerun()
+                        st.success(f"Deleted {len(valid_indices)} rows successfully! Please refresh the page to see the updated data.")
                     else:
                         st.warning("No valid row numbers provided.")
                 except Exception as e:
@@ -1808,10 +1800,7 @@ elif page == "Google Sheets - Data Editor":
                         # Update the session state
                         st.session_state.sheets_data = df
                         
-                        st.success(f"Column '{new_col_name}' added successfully!")
-                        
-                        # Force a rerun to update the UI
-                        st.experimental_rerun()
+                        st.success(f"Column '{new_col_name}' added successfully! Please refresh the page to see the updated data.")
                     except Exception as e:
                         st.error(f"Error adding column: {str(e)}")
             
@@ -1846,10 +1835,7 @@ elif page == "Google Sheets - Data Editor":
                         # Update the session state
                         st.session_state.sheets_data = df
                         
-                        st.success(f"Column '{new_col_name}' added successfully!")
-                        
-                        # Force a rerun to update the UI
-                        st.experimental_rerun()
+                        st.success(f"Column '{new_col_name}' added successfully! Please refresh the page to see the updated data.")
                     except Exception as e:
                         st.error(f"Error adding column: {str(e)}")
             
@@ -1883,10 +1869,7 @@ elif page == "Google Sheets - Data Editor":
                         # Update the session state
                         st.session_state.sheets_data = updated_df
                         
-                        st.success(f"Column '{new_col_name}' with formula added successfully!")
-                        
-                        # Force a rerun to update the UI
-                        st.experimental_rerun()
+                        st.success(f"Column '{new_col_name}' with formula added successfully! Please refresh the page to see the updated data.")
                     except Exception as e:
                         st.error(f"Error adding formula column: {str(e)}")
             
@@ -1924,10 +1907,7 @@ elif page == "Google Sheets - Data Editor":
                         # Update the session state
                         st.session_state.sheets_data = df
                         
-                        st.success(f"Column '{new_col_name}' calculated and added successfully!")
-                        
-                        # Force a rerun to update the UI
-                        st.experimental_rerun()
+                        st.success(f"Column '{new_col_name}' calculated and added successfully! Please refresh the page to see the updated data.")
                     except Exception as e:
                         st.error(f"Error adding calculated column: {str(e)}")
         
@@ -1959,10 +1939,7 @@ elif page == "Google Sheets - Data Editor":
                     # Update the session state
                     st.session_state.sheets_data = new_df
                     
-                    st.success(f"Deleted {len(cols_to_delete)} columns successfully!")
-                    
-                    # Force a rerun to update the UI
-                    st.experimental_rerun()
+                    st.success(f"Deleted {len(cols_to_delete)} columns successfully! Please refresh the page to see the updated data.")
                 except Exception as e:
                     st.error(f"Error deleting columns: {str(e)}")
         
