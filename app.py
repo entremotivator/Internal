@@ -29,6 +29,13 @@ if 'current_worksheet' not in st.session_state:
 if 'sheets_data' not in st.session_state:
     st.session_state.sheets_data = None
 
+# Predefined spreadsheet URLs
+SPREADSHEET_URLS = {
+    "Grant": "https://docs.google.com/spreadsheets/d/1t80HNEgDIBFElZqodlvfaEuRj-bPlS4-R8T9kdLBtFk/edit?gid=0#gid=0",
+    "Real Estate": "https://docs.google.com/spreadsheets/d/1BWz_FnYdzZyyl4WafSgoZV9rLHC91XOjstDcgwn_k6Y/edit?gid=666156448#gid=666156448",
+    "Agent": "https://docs.google.com/spreadsheets/d/1Om-RVVChe1GItsY4YaN_K95iM44vTpoxpSXzwTnOdAo/edit?gid=1557106830#gid=1557106830"
+}
+
 # Authentication sidebar
 with st.sidebar:
     st.title("Google Services Dashboard")
@@ -127,20 +134,34 @@ def load_spreadsheet_data():
         return None
 
 def spreadsheet_selector():
+    # Preset spreadsheet selection
+    st.subheader("Select a Preset Spreadsheet")
+    preset_option = st.selectbox(
+        "Choose a preset spreadsheet:",
+        ["Select..."] + list(SPREADSHEET_URLS.keys())
+    )
+    
+    spreadsheet_url = ""
+    if preset_option != "Select...":
+        spreadsheet_url = SPREADSHEET_URLS[preset_option]
+        st.info(f"Selected: {preset_option} - {spreadsheet_url}")
+    
+    # Or enter custom URL
+    st.subheader("Or Enter Custom URL")
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        spreadsheet_url = st.text_input("Enter Google Sheets URL:")
+        custom_url = st.text_input("Enter Google Sheets URL:", value=spreadsheet_url)
     
     with col2:
         load_button = st.button("Load", use_container_width=True)
     
-    if spreadsheet_url and load_button:
+    if custom_url and load_button:
         try:
-            if "/d/" in spreadsheet_url and "/edit" in spreadsheet_url:
-                spreadsheet_id = spreadsheet_url.split("/d/")[1].split("/edit")[0]
+            if "/d/" in custom_url and "/edit" in custom_url:
+                spreadsheet_id = custom_url.split("/d/")[1].split("/edit")[0]
             else:
-                spreadsheet_id = spreadsheet_url
+                spreadsheet_id = custom_url
             
             gc = gspread.authorize(st.session_state.credentials)
             spreadsheet = gc.open_by_key(spreadsheet_id)
@@ -175,6 +196,7 @@ if not st.session_state.authenticated:
         - Connect to and analyze Google Sheets data
         - View and manage Google Calendar events
         - Upload and manage files on Google Drive
+        - Access preset spreadsheets for Grant, Real Estate, and Agent data
         """)
     with col2:
         st.image("https://storage.googleapis.com/gweb-cloudblog-publish/images/1_GDragon_hero_image_1.max-2000x2000.jpg", 
